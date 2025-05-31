@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Distance Monitor</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    .led-status {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      margin-left: 10px;
+    }
+    .controls {
+      margin-top: 20px;
+    }
+    .dark-mode {
+      background-color: #1e1e1e;
+      color: white;
+    }
+
+    #chart-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  height: 300px;
+  margin: 0 auto;
+}
+
+    canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+
+  </style>
+</head>
+<body>
+  <h1>Ultrasonic Distance Dashboard</h1>
+  <h2 id="distance">Distance: ...</h2>
+  <div>LED Status: <span id="led-indicator" class="led-status" style="background:red;"></span></div>
+
+<div id="chart-wrapper" style="width: 100%; max-width: 500px; height: 300px; margin: 0 auto;">
+  <canvas id="chart"></canvas>
+</div>
+
+  <div class="controls">
+    <p>
+      Threshold: <span id="threshold-value">15</span> cm
+      <input type="range" min="1" max="100" value="15" id="threshold">
+    </p>
+
+    <button onclick="toggleLED(true)">Turn LED ON</button>
+    <button onclick="toggleLED(false)">Turn LED OFF</button>
+    <button onclick="autoLED()">Auto Mode</button>
+    <br><br>
+    <a href="/download" download><button>Download CSV</button></a>
+    <br><br>
+    <label>
+      <input type="checkbox" id="darkToggle"> Dark Mode
+    </label>
+  </div>
+
+  <script>
+    const socket = io();
+    const chartCtx = document.getElementById('chart').getContext('2d');
+    const chart = new Chart(chartCtx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Distance (cm)',
+          data: [],
+          borderWidth: 2
+        }]
+      },
+      options: {
+        animation: false,
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+
+    socket.on('distance', data => {
+      document.getElementById('distance').innerText = `Distance: ${data.value} cm`;
+
+      const led = document.getElementById('led-indicator');
+      led.style.background = data.led ? 'green' : 'red';
+
+      if (chart.data.labels.length > 30) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+      }
+
+      chart.data.labels.push('');
+      chart.data.datasets[0].data.push(data.value);
+      chart.update();
+    });
+
+    document.getElementById('threshold').addEventListener('input', e => {
+      const val = e.target.value;
+      document.getElementById('threshold-value').innerText = val;
+      socket.emit('threshold', { value: val });
+    });
+
+    function toggleLED(on) {
+      socket.emit('led_toggle', { on });
+    }
+
+    function autoLED() {
+      socket.emit('led_auto');
+    }
+
+    document.getElementById('darkToggle').addEventListener('change', function () {
+      document.body.classList.toggle('dark-mode', this.checked);
+    });
+  </script>
+</body>
+</html>
