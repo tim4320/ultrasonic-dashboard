@@ -4,13 +4,18 @@ import serial
 import threading
 import time
 import csv
+import random
 from io import StringIO
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Update this with your correct serial port
-ser = serial.Serial('/dev/tty.usbmodem146401', 9600, timeout=1)
+try:
+    ser = serial.Serial('/dev/tty.usbmodem146401', 9600, timeout=1)
+except serial.SerialException as e:
+    print(f"Warning: couldn't open serial port: {e}. Running in demo mode.")
+    ser = None
 # For Windows: ser = serial.Serial('COM3', 9600, timeout=1)
 
 distance = 0
@@ -23,26 +28,34 @@ def serial_reader():
     global distance, led_on
     while True:
         try:
-            line = ser.readline().decode().strip()
-            if line.startswith("D:") and "L:" in line:
-                parts = line.split(',')
-                distance_str = parts[0].split(':')[1]
-                led_str = parts[1].split(':')[1]
+            if ser:
+                line = ser.readline().decode().strip()
+                if line.startswith("D:") and "L:" in line:
+                    parts = line.split(',')
+                    distance_str = parts[0].split(':')[1]
+                    led_str = parts[1].split(':')[1]
 
-                distance = float(distance_str)
-                led_on = led_str == '1'
+                    distance = float(distance_str)
+                    led_on = led_str == '1'
+            else:
+                # Demo mode when serial port is unavailable
+                distance = random.uniform(5.0, 100.0)
+                led_on = distance < threshold
 
-                timestamp = time.strftime("%H:%M:%S")
-                csv_data.append((timestamp, distance))
+            timestamp = time.strftime("%H:%M:%S")
+            csv_data.append((timestamp, distance))
 
-                if auto_mode:
-                    led_on = distance < threshold
+            if auto_mode:
+                led_on = distance < threshold
+                if ser:
                     ser.write(b'H' if led_on else b'L')
 
-                socketio.emit('distance', {
-                    'value': distance,
-                    'led': led_on
-                })
+            socketio.emit('distance', {
+                'value': distance,
+                'led': led_on
+            })
+            if not ser:
+                time.sleep(1)
         except Exception as e:
             print("Serial error:", e)
 
@@ -57,7 +70,8 @@ def toggle_led(data):
     global led_on, auto_mode
     auto_mode = False
     led_on = data['on']
-    ser.write(b'H' if led_on else b'L')
+    if ser:
+        ser.write(b'H' if led_on else b'L')
 
 @socketio.on('led_auto')
 def enable_auto():
